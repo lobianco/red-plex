@@ -119,15 +119,15 @@ def playlist(torrent_dir, playlist, dry_run):
 
 # convert collection
 @convert.command()
-@click.argument('collage_ids', nargs=-1)
-@click.option('--site', '-s', type=click.Choice(['red', 'ops']), required=True,
-              help='Specify the site: red (Redacted) or ops (Orpheus).')
-def collection(collage_ids, site):
-    """Create Plex collections from given COLLAGE_IDS."""
-    if not collage_ids:
-        click.echo("Please provide at least one COLLAGE_ID.")
-        return
-
+@click.option('--torrent-dir', '-t', required=True, 
+              type=click.Path(exists=True, file_okay=False, dir_okay=True),
+              help='Directory containing torrent files')
+@click.option('--collection', '-c', required=True,
+              help='Name of the collection to create or update')
+@click.option('--dry-run', '-d', is_flag=True,
+              help='Show what would be done without making changes')
+def collection(torrent_dir, collection, dry_run):
+    """Create or update a Plex collection from torrent files."""
     plex_manager = initialize_plex_manager()
     if not plex_manager:
         return
@@ -135,24 +135,14 @@ def collection(collage_ids, site):
     # Populate album cache once after initializing plex_manager
     plex_manager.populate_album_cache()
 
-    gazelle_api = initialize_gazelle_api(site)
-    if not gazelle_api:
-        return
+    gazelle_api = GazelleAPI(torrent_dir)
+    collection_creator = CollectionCreator(plex_manager, gazelle_api)
 
-    collection_creator = initialize_collection_creator(plex_manager, gazelle_api)
-
-    for collage_id in collage_ids:
-        try:
-            collection_creator.create_or_update_collection_from_collage(
-                collage_id, site=site)
-        except Exception as exc:  # pylint: disable=W0718
-            logger.exception(
-                'Failed to create collection for collage %s on site %s: %s',
-                collage_id, site.upper(), exc)
-            click.echo(
-                f'Failed to create collection for collage\
-                      {collage_id} on site {site.upper()}: {exc}'
-            )
+    try:
+        collection_creator.create_or_update_collection(collection, dry_run=dry_run)
+    except Exception as exc:
+        logger.exception('Failed to create/update collection: %s', exc)
+        click.echo(f'Failed to create/update collection: {exc}')
 
 # config
 @cli.group()
