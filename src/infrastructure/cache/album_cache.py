@@ -25,26 +25,30 @@ class AlbumCache:
         os.makedirs(os.path.dirname(self.csv_file), exist_ok=True)
         with open(self.csv_file, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            for album_id, (folder_name, added_at) in album_data.items():
-                writer.writerow([album_id, folder_name, added_at.isoformat()])
+            for album_id, (folder_name, added_at, info_hash) in album_data.items():
+                writer.writerow([album_id, folder_name, added_at.isoformat(), info_hash or ''])
         logger.info('Albums saved to cache.')
 
     def load_albums(self):
         """Loads album data from the CSV file."""
         album_data = {}
-        # pylint: disable=duplicate-code
         if os.path.exists(self.csv_file):
             with open(self.csv_file, newline='', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 for row in reader:
-                    if len(row) == 3:
+                    if len(row) == 4:  # New format with info_hash
+                        album_id, folder_name, added_at_str, info_hash = row
+                        added_at = datetime.fromisoformat(added_at_str)
+                        info_hash = info_hash if info_hash else None
+                    elif len(row) == 3:  # Old format without info_hash
                         album_id, folder_name, added_at_str = row
                         added_at = datetime.fromisoformat(added_at_str)
-                    else:
-                        # Handle old cache files without added_at
+                        info_hash = None
+                    else:  # Legacy format
                         album_id, folder_name = row
-                        added_at = datetime.min  # Assign a default date
-                    album_data[int(album_id)] = (folder_name, added_at)
+                        added_at = datetime.min
+                        info_hash = None
+                    album_data[int(album_id)] = (folder_name, added_at, info_hash)
             logger.info('Albums loaded from cache.')
         else:
             logger.info('Cache file not found.')

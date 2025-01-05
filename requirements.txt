@@ -4,3 +4,4 @@ pyrate-limiter
 tenacity
 click
 pyyaml
+bencodepy

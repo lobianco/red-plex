@@ -33,6 +33,7 @@ setup(
         'pyrate-limiter',
         'click',
         'pyyaml',
+        'bencodepy',
     ],
     entry_points='''
         [console_scripts]

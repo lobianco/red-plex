@@ -92,15 +92,15 @@ def convert():
 
 # convert playlist
 @convert.command()
-@click.argument('collage_ids', nargs=-1)
-@click.option('--site', '-s', type=click.Choice(['red', 'ops']), required=True,
-              help='Specify the site: red (Redacted) or ops (Orpheus).')
-def playlist(collage_ids, site):
-    """Create Plex playlists from given COLLAGE_IDS."""
-    if not collage_ids:
-        click.echo("Please provide at least one COLLAGE_ID.")
-        return
-
+@click.option('--torrent-dir', '-t', required=True, 
+              type=click.Path(exists=True, file_okay=False, dir_okay=True),
+              help='Directory containing torrent files')
+@click.option('--playlist', '-p', required=True,
+              help='Name of the playlist to create or update')
+@click.option('--dry-run', '-d', is_flag=True,
+              help='Show what would be done without making changes')
+def playlist(torrent_dir, playlist, dry_run):
+    """Create or update a Plex playlist from torrent files."""
     plex_manager = initialize_plex_manager()
     if not plex_manager:
         return
@@ -108,23 +108,14 @@ def playlist(collage_ids, site):
     # Populate album cache once after initializing plex_manager
     plex_manager.populate_album_cache()
 
-    gazelle_api = initialize_gazelle_api(site)
-    if not gazelle_api:
-        return
+    gazelle_api = GazelleAPI(torrent_dir)
+    playlist_creator = PlaylistCreator(plex_manager, gazelle_api)
 
-    playlist_creator = initialize_playlist_creator(plex_manager, gazelle_api)
-
-    for collage_id in collage_ids:
-        try:
-            playlist_creator.create_or_update_playlist_from_collage(
-                collage_id, site=site)
-        except Exception as exc:  # pylint: disable=W0718
-            logger.exception(
-                'Failed to create playlist for collage %s on site %s: %s',
-                collage_id, site.upper(), exc)
-            click.echo(
-                f'Failed to create playlist for collage {collage_id} on site {site.upper()}: {exc}'
-            )
+    try:
+        playlist_creator.create_or_update_playlist(playlist, dry_run=dry_run)
+    except Exception as exc:
+        logger.exception('Failed to create/update playlist: %s', exc)
+        click.echo(f'Failed to create/update playlist: {exc}')
 
 # convert collection
 @convert.command()

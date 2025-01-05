@@ -1,6 +1,7 @@
 """Module for managing Plex albums and playlists."""
 
 import os
+import yaml
 from datetime import datetime, timezone
 from plexapi.server import PlexServer
 from src.infrastructure.logger.logger import logger
@@ -20,13 +21,23 @@ class PlexManager:
         self.album_cache = AlbumCache(csv_file)
         self.album_data = self.album_cache.load_albums()
 
+    def read_origin_yaml(self, album_path):
+        """Read origin.yaml file from an album directory."""
+        origin_file = os.path.join(album_path, 'origin.yaml')
+        try:
+            with open(origin_file, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except (FileNotFoundError, yaml.YAMLError) as e:
+            logger.debug('Failed to read origin.yaml in %s: %s', album_path, e)
+            return None
+
     def populate_album_cache(self):
         """Fetches new albums from Plex and updates the cache."""
         logger.info('Updating album cache...')
 
         # Determine the latest addedAt date from the existing cache
         if self.album_data:
-            latest_added_at = max(added_at for _, added_at in self.album_data.values())
+            latest_added_at = max(added_at for _, (_, added_at, _) in self.album_data.items())
             logger.info('Latest album added at: %s', latest_added_at)
         else:
             latest_added_at = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -44,7 +55,17 @@ class PlexManager:
                 media_path = tracks[0].media[0].parts[0].file
                 album_folder_path = os.path.dirname(media_path)
                 added_at = album.addedAt
-                self.album_data[int(album.ratingKey)] = (album_folder_path, added_at)
+
+                # Read info hash from origin.yaml
+                origin_data = self.read_origin_yaml(album_folder_path)
+                info_hash = origin_data.get('Info hash') if origin_data else None
+                
+                if info_hash:
+                    logger.debug('Found info hash %s for album %s', info_hash, album_folder_path)
+                else:
+                    logger.debug('No info hash found for album %s', album_folder_path)
+
+                self.album_data[int(album.ratingKey)] = (album_folder_path, added_at, info_hash)
             else:
                 logger.warning('Skipping album with no tracks: %s', album.title)
 
@@ -57,14 +78,19 @@ class PlexManager:
         self.album_data = {}
         logger.info('Album cache has been reset.')
 
-    def get_rating_keys(self, path):
-        """Returns the rating keys if the path matches an album folder."""
-        rating_keys = [key for key, (folder_path, _)
-                       in self.album_data.items() if path in folder_path]
+    def get_rating_keys(self, info_hash):
+        """Returns the rating keys if the info hash matches an album's cache entry."""
+        rating_keys = [
+            key for key, (_, _, album_hash) in self.album_data.items() 
+            if album_hash and album_hash.upper() == info_hash.upper()
+        ]
+        
         if rating_keys:
-            logger.info('Matched album folder name: %s, returning rating keys %s...', path,
-                        rating_keys)
-        return rating_keys
+            logger.info('Matched album by info hash %s', info_hash)
+            return rating_keys
+        
+        logger.debug('No matches found for info hash %s', info_hash)
+        return []
 
     def fetch_albums_by_keys(self, rating_keys):
         """Fetches album objects from Plex using their rating keys."""
